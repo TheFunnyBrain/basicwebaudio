@@ -1,0 +1,326 @@
+// Code from TheFunnyBrain.com (Adam Courtney) - copying and modification is welcomed and encouraged - use and share away!
+    //set the web audio stuff up
+        var audio_context = window.AudioContext || window.webkitAudioContext;
+        var con = new audio_context();
+    
+    //mono amp setting up
+        var monoAmp = con.createGain();
+        monoAmp.gain.value = 0;
+        monoAmp.connect(con.destination);
+    /* one mono Osc is always running, the amp "turns it on and off".
+    
+    This is because Oscillators are one use only, and I didn't want to keep making new ones and layering them on top of each other. 
+    
+    Maybe I could have just had a really quick decay on it, but I felt that one oscillator on the go constantly wasn't so bad, especially if I've got LFOs on the go. */
+    
+    //Setting up this mono osc, and connecting it to the mono amp
+        var monoOsc = con.createOscillator();
+        monoOsc.start();
+        monoOsc.type='sawtooth';
+        monoOsc.connect(monoAmp);
+        
+    //a nice filter for the a-k notes, later changed in changeFilter
+        var Filter1 = con.createBiquadFilter();
+        Filter1.connect(con.destination);
+        
+    //amp setup for the chords
+    var chordAmp = con.createGain();
+    chordAmp.gain.value = 0;
+    chordAmp.connect(con.destination);
+    
+    //making a new amp, this will plug from the chordOsc into the chordAmp, so that I can tremolo without breaking the ADSR of the notes.
+    var chordTremoloAmp = con.createGain();
+    chordTremoloAmp.gain.value = 0.1;
+    chordTremoloAmp.connect(chordAmp);
+    //Making an oscillator for the tremolo
+    var chordTremoloOsc = con.createOscillator();
+    chordTremoloOsc.frequency.value = 5;
+    chordTremoloOsc.start();
+    //Note to self, amp.gain is right, not amp.gain.value!
+    chordTremoloOsc.connect(chordTremoloAmp.gain);
+    
+    //One of each chord osc is always running, it works basically the same as the monoOsc, but with 3 stacked.
+    var chord1Osc = con.createOscillator();
+    chord1Osc.start();
+    chord1Osc.type='triangle';
+    chord1Osc.connect(chordTremoloAmp);
+    
+    var chord2Osc = con.createOscillator();
+    chord2Osc.start();
+    chord2Osc.type='triangle';
+    chord2Osc.connect(chordTremoloAmp);
+
+    var chord3Osc = con.createOscillator();
+    chord3Osc.start();
+    chord3Osc.type='triangle';
+    chord3Osc.connect(chordTremoloAmp);
+
+    //I use this to try and work out if the last key press matched the last key being let go of.
+    //It's slightly temperamental, but it works mostly.
+    var lastKeyPressed;
+    
+    //This is where I use switch statements to work out which key, and what action needs to happen.
+    function keypressIdentifier(keyName)
+    {
+        switch (keyName)
+        {
+        case"z":
+        case"x":
+        case"c":
+        case"v":
+        case"b":
+        case"n":
+        case"m":
+        case"1":
+        MonoChooseNotes(keyName);
+        return;
+            
+        case"a":
+        case"s":
+        case"d":
+        case"f":
+        case"g":
+        case"h":
+        case"j":
+        case"k":
+        polyNoteMaker(keyName);
+        return;
+            
+        case"q":
+        case"w":
+        case"e":
+        case"r":
+        case"t":
+        case"y":
+        case"u":
+        chordChooseNotes(keyName);
+        return; 
+        
+        default : 
+        return;
+        }
+    }
+    //same again but for key lifts
+     function keyLiftIdentifier(keyName)
+    {
+        switch (keyName)
+        {
+        case"z":
+        case"x":
+        case"c":
+        case"v":
+        case"b":
+        case"n":
+        case"m":
+        case"1":
+        monoNoteRelease(keyName);
+        return;
+            
+        case"a":
+        case"s":
+        case"d":
+        case"f":
+        case"g":
+        case"h":
+        case"j":
+        case"k":
+        return;
+            
+        case"q":
+        case"w":
+        case"e":
+        case"r":
+        case"t":
+        case"y":
+        case"u":
+        chordNoteRelease(keyName);
+        return; 
+        
+        default : 
+        MonoChooseNotes(keyName);
+        return;
+        }
+    }   
+    
+    function MonoChooseNotes(keyName)
+    {
+        var now = con.currentTime;
+        lastKeyPressed = keyName;
+        //A switch to set the frequency of the notes - z key is a c note etc...
+        switch (keyName)
+        {
+        case "z": monoOsc.frequency.value = 261.63;
+        break;
+        
+        case "x" : monoOsc.frequency.value = 293.66;
+        break;
+        
+        case "c" : monoOsc.frequency.value = 329.63;
+        break;
+        
+        case "v" :  monoOsc.frequency.value = 349.23;
+        break;
+
+        case "b" :  monoOsc.frequency.value = 392.00;
+        break;
+        
+        case "n" : monoOsc.frequency.value = 440.00;
+        break;
+        
+        case "m" : monoOsc.frequency.value = 493.88;
+        break;
+        //1 is set to a random note, if it's held it sounds cool, and the glissando to a "real" note is fun.
+        case "1": monoOsc.frequency.value = Math.random() * 400;
+        break;
+        
+        default:
+        return;
+        }
+        //having this here means that if I want to change the gain amount it's one number instead of each case above.
+         monoAmp.gain.linearRampToValueAtTime(0.2, now + 0.05);
+         //A pitch shift, later on I could make this change an option in a UI.
+        monoOsc.frequency.value /= 2;
+    }
+    
+    function monoNoteRelease(keyLifted)
+    {
+        /*checks if the key that's lifted matches the current note being played. This stops the oscillator fading out when you lift a key that's not being played at that moment in time.*/
+        if(lastKeyPressed == keyLifted)
+        {
+        var newnow = con.currentTime;
+        monoAmp.gain.linearRampToValueAtTime(0, newnow + 0.1);
+        }
+        
+    }
+    
+        function polyNoteMaker(keyName)
+    {
+        var now = con.currentTime;
+        lastKeyPressed = keyName;
+        
+        //main poly amp setting up
+        var polyAmp = con.createGain();
+        polyAmp.gain.value = 0.1;
+        
+        //a new oscillator is made every time this function is called
+        var polyOsc = con.createOscillator();
+        polyOsc.connect(polyAmp);
+        polyAmp.connect(Filter1);
+        polyOsc.start();
+        polyOsc.type = "square";
+        
+        //I have all of this envelope information here, as this function is a one shot, and it's not possible to reference an instance of it later on.
+        polyAmp.gain.linearRampToValueAtTime(0.2, now + 0.2);
+        polyAmp.gain.linearRampToValueAtTime(0, now + 3);
+        polyOsc.stop(now + 3);
+        
+        //Now for a vibrato! Making an oscillator and an amp
+        var polyVibratoOsc = con.createOscillator();
+        //this frequency value is lfo speed
+        polyVibratoOsc.frequency.value = 10;
+        var polyVibratoAmp = con.createGain();
+        //gain here is essentially the depth control you'd have on a pedal
+        polyVibratoAmp.gain.value = 10;
+        polyVibratoOsc.start();
+        /*The oscillator goes between 0 and 1, so connecting it to the amp just gives it a nudge to be more useful numbers.*/
+        polyVibratoOsc.connect(polyVibratoAmp);
+        /*detune affects the warping of the pitch, feeding this into the frequency just overwrites the oscillator with this LFO's frequency from what I gather.*/
+        polyVibratoAmp.connect(polyOsc.detune);
+        
+        //now for notes
+        switch (keyName)
+        {
+        case "a": polyOsc.frequency.value = 261.63;
+        break;
+        
+        case "s" : polyOsc.frequency.value = 293.66;
+        break;
+        
+        case "d" : polyOsc.frequency.value = 329.63;
+        break;
+        
+        case "f" :  polyOsc.frequency.value = 349.23;
+        break;
+
+        case "g" :  polyOsc.frequency.value = 392.00;
+        break;
+        
+        case "h" : polyOsc.frequency.value = 440.00;
+        break;
+        
+        case "j" : polyOsc.frequency.value = 493.99;
+        break;
+        
+        case "k" : polyOsc.frequency.value = 523.25;
+
+        break;
+        default:
+                return;
+        }
+    }
+    //basic filter. I actually liked how this sounded so I kept it as it was!
+    function changeFilter(mx, my)
+    {
+        Filter1.frequency.value = mx * 10;
+        Filter1.Q.value = my / 10;
+    }
+    //now for chords
+        function chordChooseNotes(keyName)
+    {
+        var now = con.currentTime;
+        lastKeyPressed = keyName;
+        //the same as monoOscs, but there's 3
+        switch (keyName)
+        {
+        case "q": chord1Osc.frequency.value = 261.63;
+                chord2Osc.frequency.value = 329.63;
+                chord3Osc.frequency.value = 392.00;
+        break;
+        
+        case "w" : chord1Osc.frequency.value = 293.66;
+                chord2Osc.frequency.value = 349.23;
+                chord3Osc.frequency.value = 440.00;
+        break;
+        
+        case "e" : chord1Osc.frequency.value = 329.63;
+                chord2Osc.frequency.value = 392.00;
+                chord3Osc.frequency.value = 493.88;
+        break;
+        
+        case "r" :  chord1Osc.frequency.value = 349.23;
+                chord2Osc.frequency.value = 440.00;
+                chord3Osc.frequency.value = 523.25;
+        break;
+
+        case "t" :  chord1Osc.frequency.value = 392.00;
+                chord2Osc.frequency.value = 493.88;
+                chord3Osc.frequency.value = 587.33;
+        break;
+        
+        case "y" : chord1Osc.frequency.value = 440.00;
+                chord2Osc.frequency.value = 523.25;
+                chord3Osc.frequency.value = 659.25;
+        break;
+        
+        case "u" : chord1Osc.frequency.value = 493.88;
+                chord2Osc.frequency.value = 587.33;
+                chord3Osc.frequency.value = 698.46;
+        break;
+        default:
+                return;
+        
+        }
+        //putting the amp gain here instead of for each switch oucome is much more efficient when making changes
+        chordAmp.gain.linearRampToValueAtTime(0.8, now + 0.2);
+    }
+    
+    function chordNoteRelease(keyLifted)
+    {
+        /*checks if the key that's lifted matches the current note being played. This stops the oscillator fading out when you lift a key that's not being played at that moment in time.*/
+        if(lastKeyPressed == keyLifted)
+        {
+        var newnow = con.currentTime;
+        chordAmp.gain.linearRampToValueAtTime(0, newnow + 10);
+        }
+        
+    }
